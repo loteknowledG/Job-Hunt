@@ -1,0 +1,5 @@
+{
+  "name": "JobHunt AI",
+  "description": "An intelligent job application tracker that uses Gemini to parse job descriptions, organize email correspondence, and schedule interview preparations.",
+  "requestFramePermissions": []
+}
