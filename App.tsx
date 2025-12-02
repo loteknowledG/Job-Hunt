@@ -1,51 +1,103 @@
-import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, PlusCircle, Search, Briefcase } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { LayoutDashboard, PlusCircle, Search, Briefcase, Database, Download, Upload } from 'lucide-react';
 import { Job, JobStatus } from './types';
 import { JobCard } from './components/JobCard';
 import { JobDetailView } from './components/JobDetailView';
 import { AddJobModal } from './components/AddJobModal';
 
-// LocalStorage Helper
-const loadJobs = (): Job[] => {
-  const saved = localStorage.getItem('jobhunt_jobs');
-  return saved ? JSON.parse(saved) : [];
-};
-
-const saveJobs = (jobs: Job[]) => {
-  localStorage.setItem('jobhunt_jobs', JSON.stringify(jobs));
-};
-
 function App() {
-  const [jobs, setJobs] = useState<Job[]>([]);
+  // App Data State - Initialize from LocalStorage
+  const [jobs, setJobs] = useState<Job[]>(() => {
+    try {
+      const saved = localStorage.getItem('jobhunt_data');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Failed to load jobs", e);
+      return [];
+    }
+  });
+  
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | JobStatus>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Persistence Effect
   useEffect(() => {
-    setJobs(loadJobs());
-  }, []);
+    localStorage.setItem('jobhunt_data', JSON.stringify(jobs));
+  }, [jobs]);
 
   const handleSaveJob = (newJob: Job) => {
-    const updatedJobs = [newJob, ...jobs];
-    setJobs(updatedJobs);
-    saveJobs(updatedJobs);
+    setJobs(prev => [newJob, ...prev]);
     setIsAddModalOpen(false);
   };
 
   const handleUpdateJob = (updatedJob: Job) => {
-    const updatedJobs = jobs.map(j => j.id === updatedJob.id ? updatedJob : j);
-    setJobs(updatedJobs);
-    saveJobs(updatedJobs);
-    setSelectedJob(updatedJob); // Update current view
+    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+    setSelectedJob(updatedJob);
   };
 
   const handleDeleteJob = (id: string) => {
-    const updatedJobs = jobs.filter(j => j.id !== id);
-    setJobs(updatedJobs);
-    saveJobs(updatedJobs);
+    setJobs(prev => prev.filter(j => j.id !== id));
     setSelectedJob(null);
   };
+
+  // -- Export / Import Handlers --
+
+  const handleExportData = () => {
+    const dataStr = JSON.stringify(jobs, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `jobhunt_data_${new Date().toISOString().split('T')[0]}.json`;
+
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileObj = event.target.files && event.target.files[0];
+    if (!fileObj) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result;
+        if (typeof text === 'string') {
+          const importedJobs = JSON.parse(text);
+          if (Array.isArray(importedJobs)) {
+             // Basic validation: check if first item has an ID or company
+             if (importedJobs.length > 0 && (!importedJobs[0].id || !importedJobs[0].company)) {
+                 alert("Invalid data format. Please upload a valid JobHunt JSON file.");
+                 return;
+             }
+             if (window.confirm(`This will replace your current list of ${jobs.length} jobs with ${importedJobs.length} jobs from the file. Continue?`)) {
+                 setJobs(importedJobs);
+                 setSelectedJob(null);
+             }
+          } else {
+            alert("Invalid file format: content is not a list.");
+          }
+        }
+      } catch (error) {
+        console.error("Error reading file:", error);
+        alert("Failed to parse JSON file.");
+      }
+      // Reset input so same file can be selected again if needed
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(fileObj);
+  };
+
+  // -- Derived State --
 
   const filteredJobs = jobs
     .filter(job => filter === 'ALL' || job.status === filter)
@@ -54,7 +106,6 @@ function App() {
       job.role.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-  // Calculate Stats
   const activeApps = jobs.filter(j => j.status === JobStatus.APPLIED || j.status === JobStatus.INTERVIEWING).length;
   const interviews = jobs.filter(j => j.status === JobStatus.INTERVIEWING).length;
 
@@ -92,20 +143,49 @@ function App() {
             </button>
         </div>
         
-        <div className="mt-auto p-4 border-t border-gray-100">
-            <p className="text-xs text-gray-400 text-center">Powered by Gemini AI</p>
+        <div className="mt-auto p-4 border-t border-gray-100 space-y-2">
+            <div className="flex items-center text-xs text-gray-400 mb-2">
+              <Database className="w-3 h-3 mr-1.5" />
+              <span>Data saved to browser</span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2">
+                <button 
+                    onClick={handleExportData}
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+                    title="Download JSON"
+                >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export</span>
+                </button>
+                <button 
+                    onClick={handleImportClick}
+                    className="flex items-center justify-center space-x-1 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 hover:text-indigo-600 transition-colors"
+                    title="Upload JSON"
+                >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Import</span>
+                </button>
+            </div>
+            <input 
+                type="file" 
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".json"
+                className="hidden" 
+            />
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col h-screen">
-        
-        {/* Mobile Header */}
+      <main className="flex-1 overflow-hidden flex flex-col h-screen relative">
         <div className="md:hidden bg-white p-4 border-b border-gray-200 flex items-center justify-between">
             <span className="font-bold text-lg text-indigo-600">JobHunt AI</span>
-            <button onClick={() => setIsAddModalOpen(true)} className="p-2 bg-indigo-600 text-white rounded-lg">
-                <PlusCircle className="w-5 h-5" />
-            </button>
+            <div className="flex items-center space-x-2">
+              <button onClick={() => setIsAddModalOpen(true)} className="p-2 bg-indigo-600 text-white rounded-lg">
+                  <PlusCircle className="w-5 h-5" />
+              </button>
+            </div>
         </div>
 
         {selectedJob ? (
@@ -124,16 +204,18 @@ function App() {
                         <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
                         <p className="text-gray-500">Track and manage your job search journey.</p>
                     </div>
-                    <button 
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="flex items-center space-x-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 shadow-md transition-all active:scale-95"
-                    >
-                        <PlusCircle className="w-5 h-5" />
-                        <span>Track New Job</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                        {/* Mobile Import/Export buttons could go here if needed, keeping simple for now */}
+                        <button 
+                            onClick={() => setIsAddModalOpen(true)}
+                            className="flex items-center space-x-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg hover:bg-indigo-700 shadow-md transition-all active:scale-95"
+                        >
+                            <PlusCircle className="w-5 h-5" />
+                            <span>Track New Job</span>
+                        </button>
+                    </div>
                 </div>
 
-                {/* Filters & Search */}
                 <div className="flex flex-col md:flex-row space-y-3 md:space-y-0 md:space-x-4 mb-6">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -164,7 +246,6 @@ function App() {
                     </div>
                 </div>
 
-                {/* Grid */}
                 {filteredJobs.length === 0 ? (
                     <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
                         <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
