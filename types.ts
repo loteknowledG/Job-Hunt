@@ -1,3 +1,4 @@
+
 export enum JobStatus {
   APPLIED = 'APPLIED',
   INTERVIEWING = 'INTERVIEWING',
@@ -31,6 +32,16 @@ export interface JobEvent {
   completed: boolean;
 }
 
+export interface Contact {
+  id: string;
+  name: string;
+  role: string; // Job Title
+  email: string;
+  phone: string;
+  linkedin: string;
+  organization: string; // Agency or Company
+}
+
 export interface Job {
   id: string;
   company: string;
@@ -43,6 +54,9 @@ export interface Job {
   notes: string;
   emails: EmailLog[];
   events: JobEvent[];
+  contacts: Contact[]; // New structured array replacing recruitingContact string
+  // Legacy field for migration purposes only
+  recruitingContact?: string; 
   aiInsights?: {
     interviewQuestions?: string[];
     keySkills?: string[];
@@ -56,4 +70,5 @@ export interface JobParseResult {
   location: string;
   description: string;
   keySkills: string[];
+  contacts: Contact[];
 }

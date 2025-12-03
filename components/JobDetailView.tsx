@@ -1,9 +1,10 @@
+
 import React, { useState } from 'react';
 import { Job, JobStatus, EmailLog, EventType, JobEvent } from '../types';
 import { 
   ArrowLeft, Mail, Calendar as CalendarIcon, 
   CheckCircle, Briefcase, Plus, Trash2, ExternalLink,
-  Sparkles, Loader2, MessageSquare, Clock
+  Sparkles, Loader2, MessageSquare, Clock, Edit2, XCircle, Check, UserCircle, Phone, Linkedin, Building
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { generateInterviewQuestions, analyzeEmail } from '../services/geminiService';
@@ -13,15 +14,19 @@ interface JobDetailViewProps {
   onBack: () => void;
   onUpdate: (updatedJob: Job) => void;
   onDelete: (id: string) => void;
+  onEdit: () => void;
 }
 
-export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpdate, onDelete }) => {
+export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpdate, onDelete, onEdit }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'emails' | 'prep'>('overview');
   const [isGeneratingPrep, setIsGeneratingPrep] = useState(false);
   const [newEmailText, setNewEmailText] = useState('');
   const [isAnalyzingEmail, setIsAnalyzingEmail] = useState(false);
   const [isAddingEvent, setIsAddingEvent] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<JobEvent>>({ type: EventType.INTERVIEW });
+  
+  // Suggested event state from AI Analysis
+  const [suggestedEvent, setSuggestedEvent] = useState<{title: string, date: string} | null>(null);
 
   // -- Handlers --
 
@@ -42,7 +47,8 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
       });
     } catch (e) {
       console.error(e);
-      alert("Failed to generate questions.");
+      // Removed alert, handled via simple console log or UI state if strictly needed. 
+      // For now, failure just stops the spinner.
     } finally {
       setIsGeneratingPrep(false);
     }
@@ -51,12 +57,14 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
   const handleAddEmail = async () => {
     if (!newEmailText.trim()) return;
     setIsAnalyzingEmail(true);
+    setSuggestedEvent(null);
+
     try {
       const analysis = await analyzeEmail(newEmailText);
       
       const newEmail: EmailLog = {
         id: Math.random().toString(36).substr(2, 9),
-        sender: 'Unknown / Pasted', // In a real app, user would specify
+        sender: 'Unknown / Pasted', 
         subject: 'Correspondence Log',
         body: newEmailText,
         date: new Date().toISOString(),
@@ -64,18 +72,11 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
       };
 
       let updatedEvents = [...job.events];
+      
+      // If AI finds an event, we DON'T auto add it via window.confirm.
+      // Instead we show a UI suggestion to the user.
       if (analysis.suggestedEvent && analysis.suggestedEvent.date) {
-        // Automatically suggest adding an event if AI found one
-        const confirmEvent = window.confirm(`AI found a potential event: "${analysis.suggestedEvent.title}" on ${analysis.suggestedEvent.date}. Add to calendar?`);
-        if (confirmEvent) {
-          updatedEvents.push({
-            id: Math.random().toString(36).substr(2, 9),
-            type: EventType.INTERVIEW,
-            title: analysis.suggestedEvent.title,
-            date: analysis.suggestedEvent.date,
-            completed: false
-          });
-        }
+        setSuggestedEvent(analysis.suggestedEvent as {title: string, date: string});
       }
 
       onUpdate({
@@ -89,6 +90,23 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
     } finally {
       setIsAnalyzingEmail(false);
     }
+  };
+
+  const confirmSuggestedEvent = () => {
+    if (!suggestedEvent) return;
+    const event: JobEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        type: EventType.INTERVIEW,
+        title: suggestedEvent.title,
+        date: suggestedEvent.date,
+        completed: false
+    };
+    onUpdate({ ...job, events: [...job.events, event] });
+    setSuggestedEvent(null);
+  };
+
+  const dismissSuggestedEvent = () => {
+    setSuggestedEvent(null);
   };
 
   const handleSaveEvent = () => {
@@ -139,11 +157,15 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{job.role}</h1>
-            <div className="flex items-center text-gray-500 mt-1 space-x-2">
-              <Briefcase className="w-4 h-4" />
-              <span>{job.company}</span>
-              <span>•</span>
-              <span>{job.location || 'Remote'}</span>
+            <div className="flex flex-wrap items-center text-gray-500 mt-1 gap-y-1">
+              <div className="flex items-center mr-3">
+                  <Briefcase className="w-4 h-4 mr-1.5" />
+                  <span>{job.company}</span>
+              </div>
+              <div className="flex items-center mr-3">
+                  <span className="mr-3">•</span>
+                  <span>{job.location || 'Remote'}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -155,11 +177,18 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
             >
                 {Object.values(JobStatus).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <div className="h-8 w-px bg-gray-300 mx-1"></div>
             <button 
-                onClick={() => {
-                    if(window.confirm('Are you sure you want to delete this application?')) onDelete(job.id);
-                }}
+                onClick={onEdit}
+                className="p-2.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Edit Job Details"
+            >
+                <Edit2 className="w-5 h-5" />
+            </button>
+            <button 
+                onClick={() => onDelete(job.id)} // Parent handles confirmation now
                 className="p-2.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="Delete Application"
             >
                 <Trash2 className="w-5 h-5" />
             </button>
@@ -187,6 +216,63 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
             </div>
             
             <div className="lg:col-span-1 space-y-6">
+                
+                {/* Contacts Card */}
+                {job.contacts && job.contacts.length > 0 && (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                        <h3 className="font-semibold text-gray-900 flex items-center mb-3">
+                            <UserCircle className="w-4 h-4 mr-2 text-indigo-600"/> 
+                            Contacts
+                        </h3>
+                        <div className="space-y-3">
+                            {job.contacts.map((contact, idx) => (
+                                <div key={contact.id || idx} className="bg-gray-50 p-3 rounded-lg border border-gray-100 text-sm">
+                                    <p className="font-bold text-gray-900">{contact.name || 'Unnamed Contact'}</p>
+                                    {(contact.role || contact.organization) && (
+                                        <p className="text-gray-600 text-xs mb-1">
+                                            {contact.role}
+                                            {contact.role && contact.organization && ' • '}
+                                            {contact.organization}
+                                        </p>
+                                    )}
+                                    <div className="mt-2 space-y-1">
+                                        {contact.email && (
+                                            <a href={`mailto:${contact.email}`} className="flex items-center text-xs text-indigo-600 hover:underline">
+                                                <Mail className="w-3 h-3 mr-1.5" /> {contact.email}
+                                            </a>
+                                        )}
+                                        {contact.phone && (
+                                            <div className="flex items-center text-xs text-gray-500">
+                                                <Phone className="w-3 h-3 mr-1.5" /> {contact.phone}
+                                            </div>
+                                        )}
+                                        {contact.linkedin && (
+                                            <a href={contact.linkedin} target="_blank" rel="noreferrer" className="flex items-center text-xs text-blue-600 hover:underline">
+                                                <Linkedin className="w-3 h-3 mr-1.5" /> LinkedIn Profile
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                
+                {/* Fallback for Legacy Recruiting Contact (if migration missed it for some reason) */}
+                {(!job.contacts || job.contacts.length === 0) && job.recruitingContact && (
+                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+                        <h3 className="font-semibold text-gray-900 flex items-center mb-3">
+                            <UserCircle className="w-4 h-4 mr-2 text-indigo-600"/> 
+                            Contact Info
+                        </h3>
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                                {job.recruitingContact}
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Events Widget */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
                     <div className="flex items-center justify-between mb-4">
@@ -274,6 +360,37 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ job, onBack, onUpd
                         </button>
                     </div>
                 </div>
+
+                {/* AI Event Suggestion Banner */}
+                {suggestedEvent && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center justify-between animate-fade-in">
+                        <div className="flex items-center space-x-3">
+                            <Sparkles className="w-5 h-5 text-emerald-600" />
+                            <div>
+                                <p className="text-sm font-bold text-emerald-900">AI Detected Event</p>
+                                <p className="text-sm text-emerald-800">
+                                    "{suggestedEvent.title}" on {format(new Date(suggestedEvent.date), 'MMM d, h:mm a')}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex space-x-2">
+                            <button 
+                                onClick={dismissSuggestedEvent}
+                                className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors"
+                                title="Dismiss"
+                            >
+                                <XCircle className="w-5 h-5" />
+                            </button>
+                            <button 
+                                onClick={confirmSuggestedEvent}
+                                className="flex items-center space-x-1 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
+                            >
+                                <Check className="w-4 h-4" />
+                                <span>Add to Calendar</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="space-y-4">
                     {job.emails.length === 0 && (

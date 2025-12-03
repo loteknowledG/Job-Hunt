@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Job, JobStatus } from '../types';
-import { Calendar, Building, MapPin, Briefcase } from 'lucide-react';
+import { Calendar, MapPin, Briefcase, UserCircle, Users } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface JobCardProps {
@@ -17,6 +18,24 @@ const statusColors = {
 };
 
 export const JobCard: React.FC<JobCardProps> = ({ job, onClick }) => {
+  
+  const getContactDisplay = () => {
+    if (job.contacts && job.contacts.length > 0) {
+        if (job.contacts.length === 1) {
+            return { icon: UserCircle, text: job.contacts[0].name || job.contacts[0].organization || 'Contact' };
+        } else {
+            return { icon: Users, text: `${job.contacts.length} Contacts` };
+        }
+    }
+    // Fallback for non-migrated data (though migration should happen on load)
+    if (job.recruitingContact) {
+         return { icon: UserCircle, text: job.recruitingContact.split('\n')[0].substring(0, 30) };
+    }
+    return null;
+  };
+
+  const contactInfo = getContactDisplay();
+
   return (
     <div 
       onClick={() => onClick(job)}
@@ -42,6 +61,14 @@ export const JobCard: React.FC<JobCardProps> = ({ job, onClick }) => {
           <MapPin className="w-3.5 h-3.5 mr-1.5" />
           {job.location || 'Remote'}
         </div>
+        
+        {contactInfo && (
+          <div className="flex items-center text-xs text-gray-500">
+            <contactInfo.icon className="w-3.5 h-3.5 mr-1.5" />
+            {contactInfo.text}
+          </div>
+        )}
+
         <div className="flex items-center text-xs text-gray-500">
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
           Applied {formatDistanceToNow(new Date(job.dateApplied), { addSuffix: true })}

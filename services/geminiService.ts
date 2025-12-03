@@ -11,7 +11,7 @@ const getGenAI = () => {
 };
 
 /**
- * Parses raw text (e.g., a pasted job description) into structured data.
+ * Parses raw text (e.g., a pasted job description or recruiter email) into structured data.
  */
 export const parseJobDescription = async (text: string): Promise<JobParseResult> => {
   const ai = getGenAI();
@@ -19,7 +19,7 @@ export const parseJobDescription = async (text: string): Promise<JobParseResult>
   const schema: Schema = {
     type: Type.OBJECT,
     properties: {
-      company: { type: Type.STRING, description: "The name of the company hiring." },
+      company: { type: Type.STRING, description: "The name of the company hiring (or the Client if it is a staffing agency email)." },
       role: { type: Type.STRING, description: "The job title or role." },
       location: { type: Type.STRING, description: "The location of the job (e.g. Remote, City)." },
       description: { type: Type.STRING, description: "A brief summary of the job description (max 2 sentences)." },
@@ -27,6 +27,21 @@ export const parseJobDescription = async (text: string): Promise<JobParseResult>
         type: Type.ARRAY, 
         items: { type: Type.STRING },
         description: "Top 5 technical or soft skills required." 
+      },
+      contacts: {
+        type: Type.ARRAY,
+        description: "List of recruiting contacts mentioned in the text. CRITICAL: Look at the start of the text for 'From:' lines or email headers (e.g., 'Name <email>') to extract the primary recruiter.",
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                name: { type: Type.STRING },
+                role: { type: Type.STRING, description: "Job Title of the contact (e.g. Recruiter, Account Manager)" },
+                email: { type: Type.STRING },
+                phone: { type: Type.STRING },
+                linkedin: { type: Type.STRING },
+                organization: { type: Type.STRING, description: "Agency or Company the contact works for" }
+            }
+        }
       }
     },
     required: ["company", "role", "keySkills"],
@@ -34,7 +49,15 @@ export const parseJobDescription = async (text: string): Promise<JobParseResult>
 
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
-    contents: `Extract the following details from this job description text: \n\n${text}`,
+    contents: `Analyze the following text, which may be a Job Description OR an Email from a recruiter.
+    
+    Instructions:
+    1. If it is an email, the Recruiter's name and email are often at the very top (e.g. "Scott, Paula <paula@Example.com>") or in the signature. Extract this into the 'contacts' array.
+    2. Identify the 'Role' and 'Company'. In staffing emails, look for lines like "Requirement Title" or "Client:".
+    3. If the text mentions a "Right to Represent", strictly extract the "Candidate Pay Rate" or details into the description summary if useful.
+    
+    Text to Analyze:
+    ${text}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: schema,
@@ -42,36 +65,19 @@ export const parseJobDescription = async (text: string): Promise<JobParseResult>
   });
 
   const jsonStr = response.text || "{}";
-  return JSON.parse(jsonStr) as JobParseResult;
-};
+  const result = JSON.parse(jsonStr);
+  
+  // Ensure contacts have IDs
+  if (result.contacts && Array.isArray(result.contacts)) {
+      result.contacts = result.contacts.map((c: any) => ({
+          ...c,
+          id: Math.random().toString(36).substr(2, 9)
+      }));
+  } else {
+      result.contacts = [];
+  }
 
-/**
- * Generates interview questions based on the job description.
- */
-export const generateInterviewQuestions = async (role: string, company: string, description: string): Promise<string[]> => {
-  const ai = getGenAI();
-
-  const schema: Schema = {
-    type: Type.ARRAY,
-    items: { type: Type.STRING },
-    description: "A list of 5 interview questions."
-  };
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: `I am applying for the position of ${role} at ${company}. 
-    Based on the job description below, generate 5 likely interview questions I should prepare for.
-    
-    Job Description:
-    ${description.substring(0, 2000)}`, // Truncate to save tokens if massive
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: schema,
-    },
-  });
-
-  const jsonStr = response.text || "[]";
-  return JSON.parse(jsonStr) as string[];
+  return result as JobParseResult;
 };
 
 /**
@@ -112,4 +118,33 @@ export const analyzeEmail = async (emailBody: string): Promise<{ summary: string
 
   const jsonStr = response.text || "{}";
   return JSON.parse(jsonStr);
+};
+
+/**
+ * Generates interview questions based on the job description.
+ */
+export const generateInterviewQuestions = async (role: string, company: string, description: string): Promise<string[]> => {
+  const ai = getGenAI();
+
+  const schema: Schema = {
+    type: Type.ARRAY,
+    items: { type: Type.STRING },
+    description: "A list of 5 interview questions."
+  };
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: `I am applying for the position of ${role} at ${company}. 
+    Based on the job description below, generate 5 likely interview questions I should prepare for.
+    
+    Job Description:
+    ${description.substring(0, 2000)}`, // Truncate to save tokens if massive
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: schema,
+    },
+  });
+
+  const jsonStr = response.text || "[]";
+  return JSON.parse(jsonStr) as string[];
 };
